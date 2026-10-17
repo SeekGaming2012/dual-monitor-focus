@@ -1,4 +1,4 @@
-"""System tray app: status icon with Pause/Resume, Recalibrate and Quit."""
+"""System tray app: status icon with Pause/Resume, Camera, Recalibrate, Start with Windows and Quit."""
 import ctypes
 import logging
 import threading
@@ -11,10 +11,12 @@ from PIL import Image, ImageDraw
 import autostart
 from calibration import CalibrationAborted, CalibrationFailed, run_calibration
 from camera import open_camera
+from cameras import list_cameras
 from config import CONFIG_DIR, load_calibration, save_calibration
 from headpose import HeadPose
+from hotkey import HotkeyListener, display_name
 from monitors import enable_dpi_awareness, list_monitors
-from settings import load_settings
+from settings import load_settings, save_setting
 from worker import FocusWorker
 
 MUTEX_NAME = "Local\\DualMonitorFocusSingleInstance"
@@ -77,7 +79,10 @@ def calibrate_blocking(camera_index):
 
 class TrayApp:
     def __init__(self, calibration, settings=None):
-        self._camera = calibration.get("camera", 0)
+        settings = settings or {}
+        self._camera = settings.get("camera", 0)
+        self._hotkey_text = settings.get("pause_hotkey", "")
+        self._hotkey = None
         self._status = "starting"
         self._calibrating = False
         self._worker = FocusWorker(calibration, camera_index=self._camera, settings=settings,
@@ -86,8 +91,8 @@ class TrayApp:
             "dual-monitor-focus", make_icon("active"), "Dual Monitor Focus",
             menu=pystray.Menu(
                 pystray.MenuItem(lambda item: f"Status: {self._status}", None, enabled=False),
-                pystray.MenuItem(lambda item: "Resume tracking" if self._worker.paused else "Pause tracking",
-                                 self._toggle_pause, default=True),
+                pystray.MenuItem(self._pause_label, self._toggle_pause, default=True),
+                pystray.MenuItem("Camera", pystray.Menu(self._camera_items)),
                 pystray.MenuItem("Recalibrate...", self._recalibrate, enabled=lambda item: not self._calibrating),
                 pystray.MenuItem("Start with Windows", self._toggle_autostart,
                                  checked=lambda item: autostart.is_enabled()),
@@ -100,6 +105,68 @@ class TrayApp:
     def _setup(self, icon):
         icon.visible = True
         self._worker.start()
+        if self._hotkey_text:
+            self._hotkey = HotkeyListener(self._hotkey_text, self._hotkey_pressed, on_error=self._notify_problem)
+            self._hotkey.start()
+
+    def _notify(self, message):
+        try:
+            self._icon.notify(message, "Dual Monitor Focus")
+        except Exception:  # notifications are best-effort
+            pass
+
+    def _notify_problem(self, message):
+        log.info(message)
+        self._notify(message)
+
+    def _pause_label(self, item):
+        label = "Resume tracking" if self._worker.paused else "Pause tracking"
+        return f"{label} ({display_name(self._hotkey_text)})" if self._hotkey_text else label
+
+    def _hotkey_pressed(self):
+        self._toggle_pause()
+        self._notify("Tracking paused" if self._worker.paused else "Tracking resumed")
+
+    def _camera_items(self):
+        """Built each time the menu opens, so newly plugged-in cameras show up."""
+        cameras = list_cameras()
+        if not cameras:
+            yield pystray.MenuItem("No cameras found", None, enabled=False)
+            return
+        if self._camera not in [i for i, _ in cameras]:
+            cameras.append((self._camera, "(not found)"))
+        for index, name in cameras:
+            yield pystray.MenuItem(f"{index}: {name}", self._camera_action(index), radio=True,
+                                   checked=lambda item, index=index: index == self._camera)
+
+    def _camera_action(self, index):
+        def action(icon=None, item=None):
+            self._select_camera(index)
+        return action
+
+    def _select_camera(self, index):
+        if self._calibrating or index == self._camera:
+            return
+        threading.Thread(target=self._switch_camera_task, args=(index,), name="switch-camera",
+                         daemon=True).start()
+
+    def _switch_camera_task(self, index):
+        was_paused = self._worker.paused
+        self._worker.pause()
+        if not self._worker.wait_camera_free():
+            log.info("camera did not release in time; keeping camera %s", self._camera)
+            if not was_paused:
+                self._worker.resume()
+            return
+        self._camera = index
+        self._worker.set_camera(index)
+        save_setting("camera", index)
+        log.info("camera changed to %s", index)
+        if was_paused:
+            self._set_state("paused", "paused")
+        else:
+            self._worker.resume()
+        self._notify("Camera changed. If switching feels off, choose Recalibrate.")
 
     def _on_event(self, message):
         log.info(message)
@@ -156,6 +223,7 @@ class TrayApp:
         threading.Thread(target=self._recalibrate_task, name="recalibrate", daemon=True).start()
 
     def _recalibrate_task(self):
+        was_paused = self._worker.paused
         try:
             self._worker.pause()
             self._set_state("paused", "calibrating")
@@ -167,9 +235,14 @@ class TrayApp:
                 self._worker.set_calibration(cal)
         finally:
             self._calibrating = False
-            self._worker.resume()
+            if was_paused:
+                self._set_state("paused", "paused")
+            else:
+                self._worker.resume()
 
     def _quit(self, icon=None, item=None):
+        if self._hotkey:
+            self._hotkey.stop()
         self._worker.stop()
         self._icon.stop()
 
@@ -180,11 +253,12 @@ def main():
         log.info("another instance is already running; exiting")
         _message_box("Dual Monitor Focus is already running (check the tray).")
         return
+    settings = load_settings()
     cal = load_calibration()
     if cal is None:
         log.info("no calibration found; calibrating")
-        cal = calibrate_blocking(0)
+        cal = calibrate_blocking(settings["camera"])
         if cal is None:
             _message_box("Calibration was not completed, so the app will exit. Start it again to retry.")
             return
-    TrayApp(cal, load_settings()).run()
+    TrayApp(cal, settings).run()

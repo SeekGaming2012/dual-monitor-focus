@@ -51,6 +51,10 @@ class FocusWorker:
         self._side = SideClassifier(calibration["left"]["yaw"], calibration["right"]["yaw"])
         self._expected_layout = calibration.get("monitors")
 
+    def set_camera(self, index):
+        """Takes effect at the next session (pause then resume)."""
+        self._camera_index = index
+
     def wait_camera_free(self, timeout=5.0):
         """After pause(): block until the camera has been released."""
         return self._camera_free.wait(timeout)

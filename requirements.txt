@@ -2,6 +2,7 @@ opencv-python==5.0.0.93
 mediapipe==1.1.1
 numpy==2.5.4
 pystray==0.19.5
+pygrabber==0.2
 pillow==13.0.0
 # development only (unit tests)
 pytest==9.1.1

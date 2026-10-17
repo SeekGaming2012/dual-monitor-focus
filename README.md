@@ -27,7 +27,8 @@ See [INSTALL.md](INSTALL.md) for setup.
 | Item | What it does |
 |---|---|
 | Status | Shows what the app is doing (tracking, paused, camera unavailable, too dark...) |
-| Pause / Resume tracking | Pausing **releases the camera** (the webcam LED goes off). Double-clicking the icon does the same |
+| Pause / Resume tracking | Pausing **releases the camera** (the webcam LED goes off). Double-clicking the icon does the same, and so does the keyboard shortcut shown next to it (default Ctrl+Alt+P) |
+| Camera | Pick which webcam to use from a list of names. The choice is remembered. After changing it, Recalibrate if switching feels off |
 | Recalibrate... | Repeats the left/right calibration. Use it if you move your chair, camera or monitors |
 | Start with Windows | Ticked = the app starts automatically when you sign in (per-user, no admin rights needed) |
 | Quit | Stops the app and frees the camera |
@@ -56,7 +57,9 @@ Edit `%APPDATA%\dual-monitor-focus\settings.json` (created on first run) and res
 
 ```json
 {
+  "camera": 0,
   "dwell_s": 0.5,
+  "pause_hotkey": "ctrl+alt+p",
   "ignore_target_processes": [],
   "suspend_when_foreground": []
 }
@@ -64,6 +67,8 @@ Edit `%APPDATA%\dual-monitor-focus\settings.json` (created on first run) and res
 
 | Key | Meaning |
 |---|---|
+| `camera` | Webcam index. Normally set from the tray's Camera menu rather than by hand |
+| `pause_hotkey` | Global shortcut that pauses/resumes tracking, written like `ctrl+alt+p` (needs at least one of ctrl, alt, shift, win, plus a key: a letter, digit, F1-F24, or names like `pause`, `home`). Use `""` to turn it off. If another program already owns the combination, you get a notification and no shortcut |
 | `dwell_s` | How long you must look at a monitor before focus moves, in seconds. Try 0.4 for snappier, 0.6 for steadier |
 | `ignore_target_processes` | Programs that should never be chosen as the window to focus, e.g. `["overlay.exe"]` |
 | `suspend_when_foreground` | While one of these programs is in front, no switching happens, e.g. `["game.exe"]` |
@@ -98,7 +103,7 @@ All in `%APPDATA%\dual-monitor-focus\`:
 | Switches to the wrong monitor | Recalibrate, with your head clearly turned toward each monitor. Left and right must differ by at least 10 degrees |
 | Switches too eagerly or too slowly | Change `dwell_s` in `settings.json` |
 | Second launch says "already running" | Only one copy runs at a time. Find the icon in the tray |
-| Wrong webcam is used | Run `scripts\step0_list_cameras.py` to list cameras. The app uses camera 0 for the first calibration, then the `"camera"` value stored in `calibration.json`, so to change it quit the app and edit that number. Virtual cameras (Iriun, OBS) can take index 0. (Choosing a camera from the tray menu is not built yet.) |
+| Wrong webcam is used | Open the tray menu and choose the right one under **Camera**. Virtual cameras (Iriun, OBS, Windows Virtual Camera) are listed too and can take index 0 or 1, which is why the names are shown. A virtual camera with nothing connected gives a black picture |
 
 ## Project layout
 
@@ -116,9 +121,11 @@ src/
   calibration.py        left/right calibration prompts
   tray.py               tray icon and menu
   autostart.py          "Start with Windows" (per-user Run registry entry)
+  cameras.py            lists webcam names for the Camera menu
+  hotkey.py             global pause shortcut (RegisterHotKey)
   config.py, settings.py, camera.py
 scripts/                step-by-step test programs (step0 ... step9)
-tests/                  unit tests for the dwell filter, input guard and autostart
+tests/                  unit tests (dwell filter, input guard, autostart, hotkey parsing, settings)
 models/                 face_landmarker.task (downloaded during install)
 ```
 

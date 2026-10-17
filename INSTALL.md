@@ -41,7 +41,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-This installs OpenCV, MediaPipe, NumPy, pystray and Pillow (plus pytest for the tests).
+This installs OpenCV, MediaPipe, NumPy, pystray, Pillow and pygrabber (used to show webcam names), plus pytest for the tests.
 
 ## 4. Download the face model
 
@@ -70,7 +70,7 @@ Check that your webcam works. You should see yourself and an fps counter; press 
 ```
 
 If you see an error, or a black picture, see *Webcam problems* below. If you have several cameras
-(including virtual ones such as Iriun or OBS), list them and pass the right index with `--camera N`:
+(including virtual ones such as Iriun or OBS), list them and pass the right index with `--camera N` to the test scripts. Once the tray app is running you can instead pick the camera from its **Camera** menu:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\step0_list_cameras.py
