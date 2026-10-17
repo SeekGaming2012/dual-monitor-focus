@@ -1,0 +1,11 @@
+# Python environment and caches
+.venv/
+__pycache__/
+.pytest_cache/
+
+# Downloaded model (see INSTALL.md step 4) and generated icon (INSTALL.md step 7)
+models/
+app.ico
+
+# Logs
+*.log
